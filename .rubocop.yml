@@ -1,0 +1,12 @@
+AllCops:
+  TargetRubyVersion: 2.3
+
+Style/FrozenStringLiteralComment:
+  Exclude:
+    - Gemfile
+    - flow.gemspec
+    - flow-core/flow-core.gemspec
+    - flow-core/spec/**/*
+
+Style/StringLiterals:
+  EnforcedStyle: double_quotes
