@@ -4,6 +4,7 @@ AllCops:
 Style/FrozenStringLiteralComment:
   Exclude:
     - Gemfile
+    - Rakefile
     - flow.gemspec
     - flow-core/flow-core.gemspec
     - flow-core/spec/**/*
