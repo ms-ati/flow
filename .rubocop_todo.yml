@@ -30,6 +30,7 @@ Style/Documentation:
     - 'spec/**/*'
     - 'test/**/*'
     - 'flow-core/lib/flow/core.rb'
+    - 'flow-core/lib/flow/core/pushers/async_pusher.rb'
     - 'flow-core/lib/flow/core/pushers/block_pusher.rb'
     - 'flow-core/lib/flow/core/pushers/callable_pusher.rb'
     - 'flow-core/lib/flow/core/pushers/constant_pusher.rb'
