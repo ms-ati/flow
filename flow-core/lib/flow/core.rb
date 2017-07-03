@@ -1,9 +1,8 @@
 require "flow/core/pusher"
-require "flow/core/pushers/constant_pusher"
+require "flow/core/pusher_factory"
 
 module Flow
-  def pusher
-    Flow::Core::Pushers::ConstantPusher.new(value: 42)
+  def self.pusher(**kw_args, &block)
+    Flow::Core::PusherFactory.new.pusher(**kw_args, &block)
   end
-  module_function :pusher
 end

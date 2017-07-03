@@ -1,5 +1,5 @@
 require "flow/core/pushers/delegating_pusher"
-require "flow/core/pushers/proc_pusher"
+require "flow/core/pushers/block_pusher"
 
 module Flow
   module Core
@@ -7,11 +7,11 @@ module Flow
       class ConstantPusher
         include DelegatingPusher
 
-        attr_reader :value
+        attr_reader :constant
 
-        def initialize(value:)
-          @value = value
-          @pusher = ProcPusher.new { value }
+        def initialize(constant:)
+          @constant = constant
+          @pusher = BlockPusher.new { constant }
         end
       end
     end

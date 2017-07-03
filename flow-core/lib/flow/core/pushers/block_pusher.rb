@@ -3,7 +3,7 @@ require "flow/core/pushers/callable_pusher"
 module Flow
   module Core
     module Pushers
-      class ProcPusher
+      class BlockPusher
         include DelegatingPusher
 
         attr_reader :proc, :pusher

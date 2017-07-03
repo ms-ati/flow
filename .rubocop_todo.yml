@@ -18,7 +18,6 @@ Layout/TrailingBlankLines:
     - 'flow-core/lib/flow/core/pushers/delegating_pusher.rb'
     - 'flow-core/lib/flow/core/pushers/enumerable_pusher.rb'
     - 'flow-core/lib/flow/core/pushers/enumerator_pusher.rb'
-    - 'flow-core/lib/flow/core/pushers/proc_pusher.rb'
 
 # Offense count: 1
 Lint/LiteralInCondition:
@@ -31,12 +30,13 @@ Style/Documentation:
     - 'spec/**/*'
     - 'test/**/*'
     - 'flow-core/lib/flow/core.rb'
+    - 'flow-core/lib/flow/core/pushers/block_pusher.rb'
     - 'flow-core/lib/flow/core/pushers/callable_pusher.rb'
     - 'flow-core/lib/flow/core/pushers/constant_pusher.rb'
     - 'flow-core/lib/flow/core/pushers/delegating_pusher.rb'
     - 'flow-core/lib/flow/core/pushers/enumerable_pusher.rb'
     - 'flow-core/lib/flow/core/pushers/enumerator_pusher.rb'
-    - 'flow-core/lib/flow/core/pushers/proc_pusher.rb'
+    - 'flow-core/lib/flow/core/pusher_factory.rb'
 
 # Offense count: 7
 # Cop supports --auto-correct.
@@ -52,12 +52,12 @@ Style/FrozenStringLiteralComment:
     - "flow-core/spec/**/*"
     # These are the actual todo files
     - 'flow-core/lib/flow/core.rb'
+    - 'flow-core/lib/flow/core/pushers/block_pusher.rb'
     - 'flow-core/lib/flow/core/pushers/callable_pusher.rb'
     - 'flow-core/lib/flow/core/pushers/constant_pusher.rb'
     - 'flow-core/lib/flow/core/pushers/delegating_pusher.rb'
     - 'flow-core/lib/flow/core/pushers/enumerable_pusher.rb'
     - 'flow-core/lib/flow/core/pushers/enumerator_pusher.rb'
-    - 'flow-core/lib/flow/core/pushers/proc_pusher.rb'
 
 # Offense count: 1
 # Cop supports --auto-correct.
