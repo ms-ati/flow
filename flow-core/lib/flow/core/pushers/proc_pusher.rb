@@ -1,3 +1,5 @@
+require "flow/core/pushers/callable_pusher"
+
 module Flow
   module Core
     module Pushers

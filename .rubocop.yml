@@ -1,13 +1,19 @@
+# TODO: Fix everything in here:
+inherit_from: .rubocop_todo.yml
+
 AllCops:
   TargetRubyVersion: 2.3
 
-Style/FrozenStringLiteralComment:
-  Exclude:
-    - Gemfile
-    - Rakefile
-    - flow.gemspec
-    - flow-core/flow-core.gemspec
-    - flow-core/spec/**/*
+##
+# TODO: Uncomment once the inherited version of this is emptied
+##
+#Style/FrozenStringLiteralComment:
+#  Exclude:
+#    - "Gemfile"
+#    - "Rakefile"
+#    - "flow.gemspec"
+#    - "flow-core/flow-core.gemspec"
+#    - "flow-core/spec/**/*"
 
 Style/StringLiterals:
   EnforcedStyle: double_quotes

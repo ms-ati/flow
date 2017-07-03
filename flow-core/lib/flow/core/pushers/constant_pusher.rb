@@ -1,3 +1,6 @@
+require "flow/core/pushers/delegating_pusher"
+require "flow/core/pushers/proc_pusher"
+
 module Flow
   module Core
     module Pushers

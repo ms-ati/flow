@@ -9,7 +9,7 @@ module Flow
         end
 
         def start_pushing!
-          while true
+          loop do
             callable.call
           end
         end

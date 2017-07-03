@@ -8,7 +8,7 @@ module Flow
 
         def initialize(enumerable:)
           @enumerable = enumerable
-          @pusher = ProcPusher.new { value }
+          @pusher = EnumeratorPusher.new(enumerator: enumerable.to_enum)
         end
       end
     end
