@@ -7,24 +7,6 @@
 # versions of RuboCop, may require this file to be generated again.
 
 # Offense count: 7
-# Cop supports --auto-correct.
-# Configuration parameters: EnforcedStyle, SupportedStyles.
-# SupportedStyles: final_newline, final_blank_line
-Layout/TrailingBlankLines:
-  Exclude:
-    - 'flow-core/lib/flow/core.rb'
-    - 'flow-core/lib/flow/core/pushers/callable_pusher.rb'
-    - 'flow-core/lib/flow/core/pushers/constant_pusher.rb'
-    - 'flow-core/lib/flow/core/pushers/delegating_pusher.rb'
-    - 'flow-core/lib/flow/core/pushers/enumerable_pusher.rb'
-    - 'flow-core/lib/flow/core/pushers/enumerator_pusher.rb'
-
-# Offense count: 1
-Lint/LiteralInCondition:
-  Exclude:
-    - 'flow-core/lib/flow/core/pushers/callable_pusher.rb'
-
-# Offense count: 7
 Style/Documentation:
   Exclude:
     - 'spec/**/*'

@@ -13,6 +13,8 @@ module Flow
         new_thread: Thread.method(:new)
       }.freeze
 
+      CATCH = nil # what was I doing here?
+
       CLASSES_BY_OPTIONS = {
         block:    Pushers::BlockPusher,
         callable: Pushers::CallablePusher,
@@ -20,7 +22,8 @@ module Flow
       }.freeze
 
       DEFAULT_OPTIONS = CLASSES_BY_OPTIONS.map { |k, _| [k, nil] }.to_h.merge(
-        async_start: ASYNC_START_METHODS[:new_thread]
+        async_start: :new_thread
+
       ).freeze
 
       EXCLUSIVE_OPTIONS = Set.new(CLASSES_BY_OPTIONS.keys).freeze
@@ -40,7 +43,8 @@ module Flow
         pusher = klass.new(**kw_args, &block)
 
         if async_start
-          Pushers::AsyncPusher.new(async_start: async_start, pusher: pusher)
+          async_call = ASYNC_START_METHODS[async_start] || async_start
+          Pushers::AsyncPusher.new(async_start: async_call, pusher: pusher)
         else
           pusher
         end
