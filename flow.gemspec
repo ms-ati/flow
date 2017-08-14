@@ -21,4 +21,6 @@ Gem::Specification.new do |s|
   s.add_dependency "flow-core", version
   # s.add_dependency "flow-even", version
   # s.add_dependency "flow-over", version
+
+  s.add_dependency "childprocess", "~> 0.7"
 end
