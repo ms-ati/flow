@@ -5,6 +5,8 @@ require "flow/core/pushers/async_pusher"
 require "flow/core/pushers/block_pusher"
 require "flow/core/pushers/callable_pusher"
 require "flow/core/pushers/constant_pusher"
+require "flow/core/pushers/enumerable_pusher"
+require "flow/core/pushers/enumerator_pusher"
 
 module Flow
   module Core
@@ -16,9 +18,11 @@ module Flow
       CATCH = nil # what was I doing here?
 
       CLASSES_BY_OPTIONS = {
-        block:    Pushers::BlockPusher,
-        callable: Pushers::CallablePusher,
-        constant: Pushers::ConstantPusher
+        block:      Pushers::BlockPusher,
+        callable:   Pushers::CallablePusher,
+        constant:   Pushers::ConstantPusher,
+        enumerable: Pushers::EnumerablePusher,
+        enumerator: Pushers::EnumeratorPusher
       }.freeze
 
       DEFAULT_OPTIONS = CLASSES_BY_OPTIONS.map { |k, _| [k, nil] }.to_h.merge(
@@ -28,14 +32,30 @@ module Flow
 
       EXCLUSIVE_OPTIONS = Set.new(CLASSES_BY_OPTIONS.keys).freeze
 
-      def pusher(**kw_args, &block)
-        options = DEFAULT_OPTIONS.merge(kw_args)
-        options[:block] = block if block_given?
+      def pusher(arg = nil, **kw_args, &block)
+        options = parse_args(arg, kw_args, block)
         ensure_valid(options)
         create_pusher(options)
       end
 
       private
+
+      def parse_args(arg, kw_args, block)
+        DEFAULT_OPTIONS.
+          merge(arg.nil? ? {} : parse_non_keyword(arg)).
+          merge(kw_args).
+          merge(block.nil? ? {} : { block: block })
+      end
+
+      def parse_non_keyword(arg)
+        case arg
+        when Enumerable
+          { enumerable: arg }
+        else
+          raise ArgumentError,
+                "Unrecognized non-keyword argument: #{arg.inspect}"
+        end
+      end
 
       def create_pusher(options)
         klass = pusher_class_for(options)
@@ -78,9 +98,9 @@ module Flow
         exclusives = exclusive_options_provided(options)
         require "pp"
         return if exclusives.size == 1
-        raise ArgumentError, "Required exactly one argument from set: "\
-                             "#{EXCLUSIVE_OPTIONS.to_a.inspect}, received: "\
-                             "#{exclusives.inspect}"
+        raise ArgumentError,
+              "Must provide a keyword argument. Allowed values are: "\
+              "#{EXCLUSIVE_OPTIONS.map(&:to_s).join(', ')}"
       end
 
       def exclusive_options_provided(options)
