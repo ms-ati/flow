@@ -41,10 +41,10 @@ module Flow
       private
 
       def parse_args(arg, kw_args, block)
-        DEFAULT_OPTIONS.
-          merge(arg.nil? ? {} : parse_non_keyword(arg)).
-          merge(kw_args).
-          merge(block.nil? ? {} : { block: block })
+        DEFAULT_OPTIONS
+          .merge(arg.nil? ? {} : parse_non_keyword(arg))
+          .merge(kw_args)
+          .merge(block.nil? ? {} : { block: block })
       end
 
       def parse_non_keyword(arg)
