@@ -14,4 +14,6 @@ Gem::Specification.new do |s|
   s.files = ["README.md"]
 
   s.required_ruby_version = ">= 2.3.1"
+
+  s.add_runtime_dependency "values"
 end
