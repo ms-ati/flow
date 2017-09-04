@@ -4,7 +4,7 @@ inherit_from: .rubocop_todo.yml
 AllCops:
   Exclude:
     - "*/examples/**/*"  # For now, don't lint the examples
-    - "vendor"
+    - "vendor/**/*"
   TargetRubyVersion: 2.3
 
 ##
