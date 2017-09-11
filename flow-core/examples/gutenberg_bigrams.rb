@@ -75,19 +75,25 @@ module ReactiveStreams
                          l
                        end
 
-      def initialize(logger: DEFAULT_LOGGER)
+      def initialize(
+        logger: DEFAULT_LOGGER,
+        first_request_size: 2,
+        later_requests_size: 3
+      )
         @logger = logger
+        @first_request_size = first_request_size
+        @later_requests_size = later_requests_size
       end
 
       def on_subscribe(subscription)
         @logger.info("#{self.class} - #on_subscribe(#{subscription.inspect})")
         @subscription = subscription
-        @subscription.request(2)
+        @subscription.request(@first_request_size)
       end
 
       def on_next(element)
         @logger.info("#{self.class} - #on_next(#{element.inspect})")
-        @subscription.request(3)
+        @subscription.request(@later_requests_size)
       end
 
       def on_error(error)
@@ -454,7 +460,7 @@ files.go!
 
 Thread.abort_on_exception = true
 n = 0
-g = -> { n += 1; n }
+g = -> { n += 1; raise StopIteration if n > 1000; n }
 p = ReactiveStreams::Tools::PumpingPublisher.new(get_next: g)
 s = ReactiveStreams::Tools::LoggingSubscriber.new
 p.subscribe(s)
