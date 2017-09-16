@@ -68,13 +68,13 @@ module ReactiveStreams
 
     NIL_SUBSCRIPTION = NilSubscriptionClass.send(:new)
 
-    class LoggingSubscriber < ReactiveStreams::API::Subscriber
-      DEFAULT_LOGGER = begin
-                         l = Logger.new($stderr)
-                         l.level = Logger::INFO
-                         l
-                       end
+    DEFAULT_LOGGER = begin
+      l = Logger.new($stderr)
+      l.level = Logger::INFO
+      l
+    end
 
+    class LoggingSubscriber < ReactiveStreams::API::Subscriber
       def initialize(
         logger: DEFAULT_LOGGER,
         first_request_size: 2,
@@ -109,7 +109,6 @@ module ReactiveStreams
     class PumpingPublisher < ReactiveStreams::API::Publisher
       DEFAULT_SCHEDULE = Thread.method(:new)
       DEFAULT_BATCH_SIZE = 1024
-      DEFAULT_LOGGER = Logger.new($stderr)
 
       def initialize(
         get_next:,
@@ -332,9 +331,11 @@ end
 class ChildProcessPublisher
 
   def initialize(process)
+    verify_process_not_started
+
     @process = process
     @subscriber = nil
-    check_process_not_started
+
     setup_finalizer
     setup_pipe
   end
@@ -352,7 +353,7 @@ class ChildProcessPublisher
 
   private
 
-  def check_process_not_started
+  def verify_process_not_started
     raise ArgumentError, "Invalid ChildProcess: #{@process.inspect}" if
       @process.nil? || @process.send(:started?)
   end
@@ -430,12 +431,12 @@ module Flow
 end
 
 # First, just push the file(s) we want to parse
-files = Flow.pusher(["tmp/rdf-files.tar.bz2"])
-files = files.each { |l| puts l } # lazy
-puts "\nWait for it... (lazy)\n"
-sleep(0.5)
-puts "---\nFiles:"
-files.go!
+# files = Flow.pusher(["tmp/rdf-files.tar.bz2"])
+# files = files.each { |l| puts l } # lazy
+# puts "\nWait for it... (lazy)\n"
+# sleep(0.5)
+# puts "---\nFiles:"
+# files.go!
 
 # Nouns of the flow dsl:
 #   - Puller: Pulls elements synchronously
