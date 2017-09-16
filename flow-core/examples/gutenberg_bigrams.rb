@@ -127,8 +127,8 @@ module ReactiveStreams
       end
 
       def subscribe(subscriber)
-        ensure_different(subscriber)
-        ensure_only_one(subscriber) if @only_one
+        return unless verify_different(subscriber) &&
+                      verify_only_one(subscriber)
 
         subscription = PumpingSubscription.new(
           subscriber: subscriber,
@@ -145,21 +145,30 @@ module ReactiveStreams
       private
 
       # @see https://github.com/reactive-streams/reactive-streams-jvm/tree/v1.0.1#1.10
-      def ensure_different(subscriber)
-        unless @subscriptions.find { |s| s.subscriber == subscriber }.nil?
-          m = "Publisher#subscribe called > 1 time with: #{subscriber.inspect}"
-          subscriber.on_error(ReactiveStreamsError.new(m))
-        end
+      def verify_different(subscriber)
+        verify(
+          that: @subscriptions.find { |s| s.subscriber == subscriber }.nil?,
+          msg: "Publisher#subscribe called > 1 time with: #{subscriber}",
+          subscriber: subscriber
+        )
       end
 
-      def ensure_only_one(subscriber)
-        unless @subscriptions.empty?
-          m = "#{self.class.to_s}#subscribe called > 1 time with only_one: true"
-          subscriber.on_error(ReactiveStreamsError.new(m))
-        end
+      def verify_only_one(subscriber)
+        verify(
+          that: !@only_one || @subscriptions.empty?,
+          msg: "#{self.class}#subscribe called > 1 time with only_one: true",
+          subscriber: subscriber
+        )
+      end
+
+      def verify(that:, msg:, subscriber:)
+        subscriber.on_error(ReactiveStreamsError.new(msg)) unless that
+        that
       end
 
       class PumpingSubscription < ReactiveStreams::API::Subscription
+        attr_reader :subscriber
+
         # @param logger [Logger]
         def initialize(subscriber:, get_next:, schedule:, batch_size:, logger:)
           @subscriber = subscriber
