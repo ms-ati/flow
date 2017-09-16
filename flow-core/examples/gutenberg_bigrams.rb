@@ -328,13 +328,47 @@ module ReactiveStreams
   end
 end
 
+<<~SKETCH_OF_KV_PROTOCOL
+/ == ROOT_PREFIX
+
+Processors behave as a Publisher and a Subscriber that share the same id.
+
+id == identifier of an *instance* of the streaming step. Can be anything, an
+      opaque string
+
+MAY include optional 'config' node to capture differences from convention,
+such as `{ serialization: "msgpack" }`, where default is "json".
+
+Reactive Streams Key-Value Driver Interface (TODO)
+
+==============================================================================
+
+/publishers/id/status <-- { state: "running", heartbeat_at: "2017-09-16T20:04:03.898974Z" }
+/publishers/id/subscribe/id <-- filename is subscriber id, content anything
+
+/subscribers/id/status
+/subscribers/id/on_subscribe/id <-- filename is subscription id, content anything
+/subscribers/id/on_next/0
+/subscribers/id/on_next/1-5 <-- items 1-5 inclusive
+/subscribers/id/on_next/6
+/subscribers/id/on_error/0 <-- { publisher_id: "id", time: "", error: "" }
+/subscribers/id/on_complete <-- only presence matters
+
+/subscriptions/id/publisher_id
+/subscriptions/id/subscriber_id
+/subscriptions/id/status
+/subscriptions/id/request/0 <-- 3     // only content is the `n` value
+/subscriptions/id/request/1 <-- 1024
+/subscriptions/id/cancel <-- only presence matters
+
+SKETCH_OF_KV_PROTOCOL
+
 class ChildProcessPublisher
-
   def initialize(process)
-    verify_process_not_started
-
     @process = process
     @subscriber = nil
+
+    verify_process_not_started
 
     setup_finalizer
     setup_pipe
@@ -346,7 +380,7 @@ class ChildProcessPublisher
       @subscriber.on_subscribe(Subscription.new(self))
     else
       subscriber.on_subscribe(NilSubscription.instance)
-      subscriber.on_error(PublisherStateError.new())
+      # subscriber.on_error(PublisherStateError.new())
     end
 
   end
@@ -466,8 +500,12 @@ end
 # lines.go!
 
 Thread.abort_on_exception = true
-n = 0
-g = -> { n += 1; raise StopIteration if n > 1000; n }
-p = ReactiveStreams::Tools::PumpingPublisher.new(get_next: g)
-s = ReactiveStreams::Tools::LoggingSubscriber.new
-p.subscribe(s)
+
+## Demo basic reactive streams publisher into logging subscriber
+# n = 0
+# g = -> { n += 1; raise StopIteration if n > 1000; n }
+# p = ReactiveStreams::Tools::PumpingPublisher.new(get_next: g)
+# s = ReactiveStreams::Tools::LoggingSubscriber.new
+# p.subscribe(s)
+
+## Demo child process publisher into logging subscriber
