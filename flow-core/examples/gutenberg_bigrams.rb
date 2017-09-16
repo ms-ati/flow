@@ -86,7 +86,7 @@ module ReactiveStreams
       end
 
       def on_subscribe(subscription)
-        @logger.info("#{self.class} - #on_subscribe(#{subscription.inspect})")
+        @logger.info("#{self.class} - #on_subscribe(#{subscription})")
         @subscription = subscription
         @subscription.request(@first_request_size)
       end
@@ -328,9 +328,6 @@ module ReactiveStreams
     class ReactiveStreamsError < StandardError; end
   end
 end
-
-
-
 
 class ChildProcessPublisher
 
