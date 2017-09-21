@@ -325,6 +325,12 @@ module ReactiveStreams
       end
     end
 
+    class IOPublisher < ReactiveStreams::Tools::PumpingPublisher
+      def initialize(input_io:, **args)
+        super(get_next: input_io.each_line.method(:next), **args)
+      end
+    end
+
     class ReactiveStreamsError < StandardError; end
   end
 end
@@ -392,19 +398,6 @@ SKETCH_OF_KV_PROTOCOL
 #       DEFAULT_ROOT_PREFIX = "streams"
 #       DEFAULT_DRIVER = Drivers::FileDriver.new(root_prefix: DEFAULT_ROOT_PREFIX)
 #
-#       class IOPublisher < ReactiveStreams::Tools::PumpingPublisher
-#         def initialize(
-#           input_io: $stdin,
-#           input_sep: $/
-#         )
-#           @input_io = input_io
-#           @input_sep = input_sep
-#         end
-#
-#         def start
-#
-#         end
-#       end
 #     end
 #   end
 # end
@@ -556,7 +549,6 @@ Thread.abort_on_exception = true
 
 ## Demo IO-reading reactive streams publisher into logging subscriber
 io = File.open(__FILE__, "r")
-g = io.each_line.method(:next)
-p = ReactiveStreams::Tools::PumpingPublisher.new(get_next: g)
+p = ReactiveStreams::Tools::IOPublisher.new(input_io: io)
 s = ReactiveStreams::Tools::LoggingSubscriber.new
 p.subscribe(s)
