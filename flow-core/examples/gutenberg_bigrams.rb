@@ -255,7 +255,7 @@ module ReactiveStreams
 
         def do_send
           # In order to not monopolize the cpu we will only send at-most
-          # `batch_size` before rescheduing ourselves.
+          # `batch_size` before rescheduling ourselves.
           left_in_batch = @batch_size
 
           loop do
@@ -269,14 +269,15 @@ module ReactiveStreams
               do_cancel
               @subscriber.on_complete
             rescue StandardError => error
-              # If `get_next` throws (they can, since it is user-provided), we
-              # need to treat the stream as errored as per rule 1.4
+              # If `get_next` raises (it can, since it is user-provided), we
+              # need to treat it as publisher error as per rule 1.4
               terminate_due_to(error)
             end
 
             # Then we signal the next element downstream to the `Subscriber`
             @subscriber.on_next(next_element) unless @cancelled
 
+            # Keep going until exhausted batch or demand, or cancelled
             left_in_batch -= 1
             @demand -= 1
             break if @cancelled || left_in_batch.zero? || @demand.zero?
@@ -362,6 +363,51 @@ Reactive Streams Key-Value Driver Interface (TODO)
 /subscriptions/id/cancel <-- only presence matters
 
 SKETCH_OF_KV_PROTOCOL
+
+# module ReactiveStreams
+#   module KV
+#     module API
+#       class Driver
+#         def with_root_prefix(root_prefix)
+#           raise NotImplementedError
+#         end
+#
+#         def keys(prefix)
+#           raise NotImplementedError
+#         end
+#
+#         def fetch_io(key)
+#           raise NotImplementedError
+#         end
+#       end
+#     end
+#
+#     module Drivers
+#       class FileDriver < ReactiveStreams::KV::Driver
+#
+#       end
+#     end
+#
+#     module Tools
+#       DEFAULT_ROOT_PREFIX = "streams"
+#       DEFAULT_DRIVER = Drivers::FileDriver.new(root_prefix: DEFAULT_ROOT_PREFIX)
+#
+#       class IOPublisher < ReactiveStreams::Tools::PumpingPublisher
+#         def initialize(
+#           input_io: $stdin,
+#           input_sep: $/
+#         )
+#           @input_io = input_io
+#           @input_sep = input_sep
+#         end
+#
+#         def start
+#
+#         end
+#       end
+#     end
+#   end
+# end
 
 class ChildProcessPublisher
   def initialize(process)
@@ -501,11 +547,16 @@ end
 
 Thread.abort_on_exception = true
 
-## Demo basic reactive streams publisher into logging subscriber
+## Demo basic "pumping" reactive streams publisher into logging subscriber
 # n = 0
 # g = -> { n += 1; raise StopIteration if n > 1000; n }
 # p = ReactiveStreams::Tools::PumpingPublisher.new(get_next: g)
 # s = ReactiveStreams::Tools::LoggingSubscriber.new
 # p.subscribe(s)
 
-## Demo child process publisher into logging subscriber
+## Demo IO-reading reactive streams publisher into logging subscriber
+io = File.open(__FILE__, "r")
+g = io.each_line.method(:next)
+p = ReactiveStreams::Tools::PumpingPublisher.new(get_next: g)
+s = ReactiveStreams::Tools::LoggingSubscriber.new
+p.subscribe(s)
