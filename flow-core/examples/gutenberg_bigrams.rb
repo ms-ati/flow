@@ -527,18 +527,24 @@ end
 
 Thread.abort_on_exception = true
 
+# require "./gutenberg_bigrams.rb"
+
 ## Demo basic "pumping" reactive streams publisher into logging subscriber
-# n = 0
-# g = -> { n += 1; raise StopIteration if n > 1000; n }
-# p = ReactiveStreams::Tools::PumpingPublisher.new(get_next: g)
-# s = ReactiveStreams::Tools::LoggingSubscriber.new
-# p.subscribe(s)
+if false
+  n = 0
+  g = -> { n += 1; raise StopIteration if n > 1000; n }
+  p = ReactiveStreams::Tools::PumpingPublisher.new(get_next: g)
+  s = ReactiveStreams::Tools::LoggingSubscriber.new
+  p.subscribe(s)
+end
 
 ## Demo IO-reading reactive streams publisher into logging subscriber
-# io = File.open(__FILE__, "r")
-# p = ReactiveStreams::Tools::IOPublisher.new(input_io: io)
-# s = ReactiveStreams::Tools::LoggingSubscriber.new
-# p.subscribe(s)
+if false
+  io = File.open("./gutenberg_bigrams.rb", "r")
+  p = ReactiveStreams::Tools::IOPublisher.new(input_io: io)
+  s = ReactiveStreams::Tools::LoggingSubscriber.new
+  p.subscribe(s)
+end
 
 ## Demo process pipe-reading reactive streams publisher into logging subscriber
 if false
