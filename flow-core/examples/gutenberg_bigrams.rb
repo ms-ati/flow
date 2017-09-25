@@ -36,8 +36,8 @@ module ReactiveStreams
     end
 
     class Subscription
-      # @see Reactive Streams rule 3.17
-      MAX_DEMAND = (2**63) - 1
+      # @see Reactive Streams rule 3.17, but use the max Fixnum on MRI
+      MAX_DEMAND = (2**62) - 1
 
       def request(n)
         raise NotImplementedError
@@ -248,7 +248,7 @@ module ReactiveStreams
                 "#{subscriber.inspect}."
             terminate_due_to(ReactiveStreamsError.new(m))
           else
-            @demand = [@demand + n, MAX_DEMAND].min
+            @demand = @demand > (MAX_DEMAND - n) ? MAX_DEMAND : @demand + n
             do_send
           end
         end
@@ -530,27 +530,30 @@ Thread.abort_on_exception = true
 # require "./gutenberg_bigrams.rb"
 
 ## Demo basic "pumping" reactive streams publisher into logging subscriber
-if false
+def demo_basic_pumping
   n = 0
   g = -> { n += 1; raise StopIteration if n > 1000; n }
   p = ReactiveStreams::Tools::PumpingPublisher.new(get_next: g)
   s = ReactiveStreams::Tools::LoggingSubscriber.new
   p.subscribe(s)
+  [p, s]
 end
 
 ## Demo IO-reading reactive streams publisher into logging subscriber
-if false
+def demo_pump_read_io
   io = File.open("./gutenberg_bigrams.rb", "r")
   p = ReactiveStreams::Tools::IOPublisher.new(input_io: io)
   s = ReactiveStreams::Tools::LoggingSubscriber.new
   p.subscribe(s)
+  [p, s]
 end
 
 ## Demo process pipe-reading reactive streams publisher into logging subscriber
-if false
+def demo_pump_child_process_pipe
   f = File.join(__dir__, "..", "..", "tmp", "rdf-files.tar.bz2")
   cp = ChildProcess.build("tar", "jtvf", f)
   p = ChildProcessPublisher.new(process: cp)
   s = ReactiveStreams::Tools::LoggingSubscriber.new
   p.subscribe(s)
+  [p, s]
 end
