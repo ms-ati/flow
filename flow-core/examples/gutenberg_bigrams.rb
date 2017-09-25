@@ -77,8 +77,8 @@ module ReactiveStreams
     class LoggingSubscriber < ReactiveStreams::API::Subscriber
       def initialize(
         logger: DEFAULT_LOGGER,
-        first_request_size: 2,
-        later_requests_size: 3
+        first_request_size: 1024,
+        later_requests_size: 1024
       )
         @logger = logger
         @first_request_size = first_request_size
@@ -402,26 +402,20 @@ SKETCH_OF_KV_PROTOCOL
 #   end
 # end
 
-class ChildProcessPublisher
-  def initialize(process)
+class ChildProcessPublisher < ReactiveStreams::Tools::IOPublisher
+  def initialize(process:, **args)
     @process = process
-    @subscriber = nil
 
     verify_process_not_started
-
     setup_finalizer
     setup_pipe
+
+    super(input_io: @input_io, **args)
   end
 
   def subscribe(subscriber)
-    if @subscriber.nil?
-      @subscriber = subscriber
-      @subscriber.on_subscribe(Subscription.new(self))
-    else
-      subscriber.on_subscribe(NilSubscription.instance)
-      # subscriber.on_error(PublisherStateError.new())
-    end
-
+    super(subscriber)
+    start_process
   end
 
   private
@@ -431,17 +425,18 @@ class ChildProcessPublisher
       @process.nil? || @process.send(:started?)
   end
 
-  def check_no_subscriber
-    raise
-  end
-
   def setup_finalizer
     ObjectSpace.define_finalizer(self, Finalizer.new(@process))
   end
 
   def setup_pipe
-    @read_io, @process.io.stdout = IO.pipe
+    @input_io, @process.io.stdout = IO.pipe
     @process.io.stderr = $stderr
+  end
+
+  def start_process
+    @process.start
+    @process.io.stdout.close
   end
 
   # @see ObjectSpace#define_finalizer
@@ -455,14 +450,6 @@ class ChildProcessPublisher
     end
   end
 end
-
-##
-# 2. Spikes of external process interaction with reactive streams
-##
-
-#file =
-#args = ["tar", "jtvf", file]
-#cp = ChildProcess.build(*args)
 
 ##
 # 3. Spikes of flow dsl for building and running the above
@@ -548,7 +535,16 @@ Thread.abort_on_exception = true
 # p.subscribe(s)
 
 ## Demo IO-reading reactive streams publisher into logging subscriber
-io = File.open(__FILE__, "r")
-p = ReactiveStreams::Tools::IOPublisher.new(input_io: io)
-s = ReactiveStreams::Tools::LoggingSubscriber.new
-p.subscribe(s)
+# io = File.open(__FILE__, "r")
+# p = ReactiveStreams::Tools::IOPublisher.new(input_io: io)
+# s = ReactiveStreams::Tools::LoggingSubscriber.new
+# p.subscribe(s)
+
+## Demo process pipe-reading reactive streams publisher into logging subscriber
+if false
+  f = File.join(__dir__, "..", "..", "tmp", "rdf-files.tar.bz2")
+  cp = ChildProcess.build("tar", "jtvf", f)
+  p = ChildProcessPublisher.new(process: cp)
+  s = ReactiveStreams::Tools::LoggingSubscriber.new
+  p.subscribe(s)
+end
