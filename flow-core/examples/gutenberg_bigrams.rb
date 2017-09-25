@@ -309,18 +309,18 @@ module ReactiveStreams
         def terminate_due_to(error)
           # When we signal on_error, the subscription must be considered as
           # cancelled, as per rule 1.6
-          @cancelled = true
-          begin
-            # Then we signal the error downstream, to the `Subscriber`
-            @subscriber.on_error(error)
-          rescue StandardError => error2
-            # If `on_error` throws an exception, this is a spec violation
-            # according to rule 1.9 and 2.13, and all we can do is to log it.
-            m = "Subscriber#on_error violated the Reactive Streams rule 2.13 "\
-                "by raising an exception. Subscriber: #{@subscriber.inspect}."
-            @logger.error(ReactiveStreamsError.new(m))
-            @logger.error(error2)
-          end
+          do_cancel
+
+          # Then we signal the error downstream, to the `Subscriber`
+          @subscriber.on_error(error)
+
+        rescue StandardError => error2
+          # If `on_error` throws an exception, this is a spec violation
+          # according to rule 1.9 and 2.13, and all we can do is to log it.
+          m = "Subscriber#on_error violated the Reactive Streams rule 2.13 "\
+              "by raising an exception. Subscriber: #{@subscriber.inspect}."
+          @logger.error(ReactiveStreamsError.new(m))
+          @logger.error(error2)
         end
       end
     end
