@@ -136,6 +136,7 @@ module ReactiveStreams
           batch_size: @batch_size,
           logger: @logger
         )
+
         subscription.start # constructor finishes before concurrency starts
 
         @subscriptions << subscription
@@ -197,7 +198,7 @@ module ReactiveStreams
         private
 
         def signal(s, n = nil)
-          @pending_signals << (n ? [s, n] : s)
+          @pending_signals << (n.nil? ? s : [s, n])
           try_to_schedule
         end
 
@@ -207,17 +208,18 @@ module ReactiveStreams
 
         def run
           loop do
-            s, n = begin
-                     @pending_signals.pop(true)
-                   rescue ThreadError
-                     # For some reason, ThreadError means empty queue here
-                     break
-                   end
+            next_signal, n =
+              begin
+                @pending_signals.pop(true)
+              rescue ThreadError
+                # Queue#pop(true) raises ThreadError when the queue is empty
+                break
+              end
 
             # If cancelled, just keep emptying the pending signals queue
             next if @cancelled
 
-            case s
+            case next_signal
             when :start
               do_start
             when :request
@@ -227,8 +229,9 @@ module ReactiveStreams
             when :cancel
               do_cancel
             else
-              m = "PumpingSubscription unrecognized signal: #{s.inspect}"
-              terminate_due_to(ReactiveStreamsError.new(m))
+              msg = "PumpingSubscription#run received an unrecognized signal: "\
+                    "#{next_signal.inspect}"
+              terminate_due_to(ReactiveStreamsError.new(msg))
             end
           end
 
@@ -243,10 +246,10 @@ module ReactiveStreams
 
         def do_request(n)
           if n < 1
-            m = "Subscriber violated the Reactive Streams rule 3.9 by "\
-                "requesting a non-positive number of elements. Subscriber: "\
-                "#{subscriber.inspect}."
-            terminate_due_to(ReactiveStreamsError.new(m))
+            msg = "Subscriber violated the Reactive Streams rule 3.9 by "\
+                  "requesting a non-positive number of elements. Subscriber: "\
+                  "#{subscriber.inspect}."
+            terminate_due_to(ReactiveStreamsError.new(msg))
           else
             @demand = [@demand + n, MAX_DEMAND].min
             do_send
@@ -293,10 +296,10 @@ module ReactiveStreams
           # log here.
           do_cancel
 
-          m = "Subscriber violated the Reactive Streams rule 2.13 by raising "\
-              "an exception from on_next or on_complete. Subscriber: "\
-              "#{@subscriber.inspect}."
-          @logger.error(ReactiveStreamsError.new(m))
+          msg = "Subscriber violated the Reactive Streams rule 2.13 by "\
+                "raising an exception from on_next or on_complete. "\
+                "Subscriber: #{@subscriber.inspect}."
+          @logger.error(ReactiveStreamsError.new(msg))
           @logger.error(error)
         end
 
@@ -317,11 +320,17 @@ module ReactiveStreams
         rescue StandardError => error2
           # If `on_error` throws an exception, this is a spec violation
           # according to rule 1.9 and 2.13, and all we can do is to log it.
-          m = "Subscriber#on_error violated the Reactive Streams rule 2.13 "\
-              "by raising an exception. Subscriber: #{@subscriber.inspect}."
-          @logger.error(ReactiveStreamsError.new(m))
+          msg = "Subscriber#on_error violated the Reactive Streams rule 2.13 "\
+                "by raising an exception. Subscriber: #{@subscriber.inspect}."
+          @logger.error(ReactiveStreamsError.new(msg))
           @logger.error(error2)
         end
+      end
+    end
+
+    class SomethingSubscriber < ReactiveStreams::API::Subscriber
+      def initialize
+
       end
     end
 
@@ -336,37 +345,37 @@ module ReactiveStreams
 end
 
 <<~SKETCH_OF_KV_PROTOCOL
-/ == ROOT_PREFIX
+    / == ROOT_PREFIX
 
-Processors behave as a Publisher and a Subscriber that share the same id.
+    Processors behave as a Publisher and a Subscriber that share the same id.
 
-id == identifier of an *instance* of the streaming step. Can be anything, an
-      opaque string
+    id == identifier of an *instance* of the streaming step. Can be anything, an
+          opaque string
 
-MAY include optional 'config' node to capture differences from convention,
-such as `{ serialization: "msgpack" }`, where default is "json".
+    MAY include optional 'config' node to capture differences from convention,
+    such as `{ serialization: "msgpack" }`, where default is "json".
 
-Reactive Streams Key-Value Driver Interface (TODO)
+    Reactive Streams Key-Value Driver Interface (TODO)
 
-==============================================================================
+    ==============================================================================
 
-/publishers/id/status <-- { state: "running", heartbeat_at: "2017-09-16T20:04:03.898974Z" }
-/publishers/id/subscribe/id <-- filename is subscriber id, content anything
+    /publishers/id/status <-- { state: "running", heartbeat_at: "2017-09-16T20:04:03.898974Z" }
+    /publishers/id/subscribe/id <-- filename is subscriber id, content anything
 
-/subscribers/id/status
-/subscribers/id/on_subscribe/id <-- filename is subscription id, content anything
-/subscribers/id/on_next/0
-/subscribers/id/on_next/1-5 <-- items 1-5 inclusive
-/subscribers/id/on_next/6
-/subscribers/id/on_error/0 <-- { publisher_id: "id", time: "", error: "" }
-/subscribers/id/on_complete <-- only presence matters
+    /subscribers/id/status
+    /subscribers/id/on_subscribe/id <-- filename is subscription id, content anything
+    /subscribers/id/on_next/0
+    /subscribers/id/on_next/1-5 <-- items 1-5 inclusive
+    /subscribers/id/on_next/6
+    /subscribers/id/on_error/0 <-- { publisher_id: "id", time: "", error: "" }
+    /subscribers/id/on_complete <-- only presence matters
 
-/subscriptions/id/publisher_id
-/subscriptions/id/subscriber_id
-/subscriptions/id/status
-/subscriptions/id/request/0 <-- 3     // only content is the `n` value
-/subscriptions/id/request/1 <-- 1024
-/subscriptions/id/cancel <-- only presence matters
+    /subscriptions/id/publisher_id
+    /subscriptions/id/subscriber_id
+    /subscriptions/id/status
+    /subscriptions/id/request/0 <-- 3     // only content is the `n` value
+    /subscriptions/id/request/1 <-- 1024
+    /subscriptions/id/cancel <-- only presence matters
 
 SKETCH_OF_KV_PROTOCOL
 
@@ -527,30 +536,36 @@ end
 
 Thread.abort_on_exception = true
 
-# require "./gutenberg_bigrams.rb"
+def demo_of(
+  publisher:,
+  subscriber: ReactiveStreams::Tools::LoggingSubscriber.new
+)
+  publisher.subscribe(subscriber)
+  @prevent_gc_of = [publisher, subscriber]
+end
 
 ## Demo basic "pumping" reactive streams publisher into logging subscriber
-if false
+def demo_pump_basic
   n = 0
   g = -> { n += 1; raise StopIteration if n > 1000; n }
-  p = ReactiveStreams::Tools::PumpingPublisher.new(get_next: g)
-  s = ReactiveStreams::Tools::LoggingSubscriber.new
-  p.subscribe(s)
+  demo_of(publisher: ReactiveStreams::Tools::PumpingPublisher.new(get_next: g))
 end
 
 ## Demo IO-reading reactive streams publisher into logging subscriber
-if false
+def demo_pump_io
   io = File.open("./gutenberg_bigrams.rb", "r")
-  p = ReactiveStreams::Tools::IOPublisher.new(input_io: io)
-  s = ReactiveStreams::Tools::LoggingSubscriber.new
-  p.subscribe(s)
+  demo_of(publisher: ReactiveStreams::Tools::IOPublisher.new(input_io: io))
 end
 
 ## Demo process pipe-reading reactive streams publisher into logging subscriber
-if false
+def demo_pump_process
   f = File.join(__dir__, "..", "..", "tmp", "rdf-files.tar.bz2")
   cp = ChildProcess.build("tar", "jtvf", f)
-  p = ChildProcessPublisher.new(process: cp)
-  s = ReactiveStreams::Tools::LoggingSubscriber.new
-  p.subscribe(s)
+  demo_of(publisher: ChildProcessPublisher.new(process: cp))
 end
+
+#
+# To interact:
+#
+#   bundle exec irb -r ./gutenberg_bigrams.rb
+#
