@@ -77,10 +77,12 @@ module ReactiveStreams
     class LoggingSubscriber < ReactiveStreams::API::Subscriber
       def initialize(
         logger: DEFAULT_LOGGER,
+        log_on_next: true,
         first_request_size: 2,
-        later_requests_size: 3
+        later_requests_size: 1024
       )
         @logger = logger
+        @log_on_next = log_on_next
         @first_request_size = first_request_size
         @later_requests_size = later_requests_size
       end
@@ -89,20 +91,33 @@ module ReactiveStreams
         @logger.info("#{self.class} - #on_subscribe(#{subscription})")
         @subscription = subscription
         @subscription.request(@first_request_size)
+        @started = Time.now
       end
 
       def on_next(element)
-        @logger.info("#{self.class} - #on_next(#{element.inspect})")
+        if @log_on_next
+          @logger.info("#{self.class} - #on_next(#{element.inspect})")
+        end
         @subscription.request(@later_requests_size)
       end
 
       def on_error(error)
         @logger.info("#{self.class} - #on_error(#{error.inspect})")
         @logger.error(error)
+        log_time_taken
       end
 
       def on_complete
         @logger.info("#{self.class} - #on_complete")
+        log_time_taken
+      end
+
+      private
+
+      def log_time_taken
+        @ended = Time.now
+        duration = Time.at(@ended - @started).utc.strftime("%H:%M:%S.%L")
+        @logger.info("#{self.class} - Total duration #{duration}")
       end
     end
 
@@ -612,7 +627,7 @@ Thread.abort_on_exception = true
 
 def demo_of(
   publisher:,
-  subscriber: ReactiveStreams::Tools::LoggingSubscriber.new
+  subscriber: ReactiveStreams::Tools::LoggingSubscriber.new(log_on_next: false)
 )
   publisher.subscribe(subscriber)
   @prevent_gc_of = [publisher, subscriber]
@@ -627,6 +642,7 @@ def demo_pump_basic
   demo_of(publisher: ReactiveStreams::Tools::PumpingPublisher.new(get_next: g))
 end
 
+## Demo scheduling using a Fiber to allow support for Ruby Enumerators
 def demo_pump_fiber
   g = (0...10000).to_enum.method(:next)
   s = ->(&block) { Fiber.new(&block).resume }
@@ -642,16 +658,15 @@ end
 ## Demo process pipe-reading reactive streams publisher into logging subscriber
 def demo_pump_process
   f = File.join(__dir__, "..", "..", "tmp", "rdf-files.tar.bz2")
-  cp = ChildProcess.build("tar", "jtvf", f)
+  cp = ChildProcess.build("tar", "-tjvf", f)
   demo_of(publisher: ChildProcessPublisher.new(process: cp))
 end
 
 #
-# To interact:
+# To interact in console:
 #
 #   bundle exec irb -r ./gutenberg_bigrams.rb
 #
-
 #
 # To non-interactively run a demo:
 #
