@@ -77,8 +77,8 @@ module ReactiveStreams
     class LoggingSubscriber < ReactiveStreams::API::Subscriber
       def initialize(
         logger: DEFAULT_LOGGER,
-        first_request_size: 1024,
-        later_requests_size: 1024
+        first_request_size: 2,
+        later_requests_size: 3
       )
         @logger = logger
         @first_request_size = first_request_size
@@ -106,10 +106,45 @@ module ReactiveStreams
       end
     end
 
-    class PumpingPublisher < ReactiveStreams::API::Publisher
-      DEFAULT_SCHEDULE = Thread.method(:new)
-      DEFAULT_BATCH_SIZE = 1024
+    # Default implementation used if concurrent-ruby not available
+    class MutexAtomicBoolean
+      def initialize(initial = false)
+        @value = initial
+        @mutex = ::Thread::Mutex.new
+      end
 
+      def value
+        @mutex.synchronize { @value }
+      end
+
+      def value=(update)
+        @mutex.synchronize { @value = update }
+      end
+
+      def compare_and_set(expect, update)
+        @mutex.synchronize do
+          matched = (expect == @value)
+          @value = update if matched
+          matched
+        end
+      end
+
+      def make_true
+        compare_and_set(false, true)
+      end
+
+      def make_false
+        compare_and_set(true, false)
+      end
+    end
+
+    AtomicBoolean = MutexAtomicBoolean
+
+    DEFAULT_SCHEDULE = Thread.method(:new)
+
+    DEFAULT_BATCH_SIZE = 1024
+
+    class PumpingPublisher < ReactiveStreams::API::Publisher
       def initialize(
         get_next:,
         only_one:   true,
@@ -181,6 +216,8 @@ module ReactiveStreams
           @demand = 0
 
           @pending_signals = Queue.new
+          @running = AtomicBoolean.new
+          @as_proc = self.method(:run).to_proc
         end
 
         def start
@@ -202,23 +239,30 @@ module ReactiveStreams
           try_to_schedule
         end
 
+        # Makes sure that this Subscription is only running once at a time.
+        # This is important to make sure that we follow rule 1.3
         def try_to_schedule
-          @running ||= @schedule.call(&self.method(:run))
+          @schedule.call(&@as_proc) if @running.make_true
+        rescue StandardError => error
+          # If we can't schedule to run, we need to fail gracefully
+          terminate_due_to(error)
         end
 
         def run
-          loop do
-            next_signal, n =
-              begin
-                @pending_signals.pop(true)
-              rescue ThreadError
-                # Queue#pop(true) raises ThreadError when the queue is empty
-                break
-              end
+          # Establishes a happens-before relationship with end of previous run
+          return unless @running.value
 
-            # If cancelled, just keep emptying the pending signals queue
-            next if @cancelled
+          # Pop next signal from queue
+          next_signal, n =
+            begin
+              @pending_signals.pop(true)
+            rescue ThreadError
+              # Queue#pop(true) raises ThreadError when the queue is empty
+              return
+            end
 
+          # If cancelled, skip handling the signals, but keep emptying the queue
+          unless @cancelled
             case next_signal
             when :start
               do_start
@@ -235,7 +279,12 @@ module ReactiveStreams
             end
           end
 
-          @running = nil
+        ensure
+          # Establishes a happens-before relationship with beginning of next run
+          @running.value = false
+
+          # If we still have signals to process, schedule ourselves to run again
+          try_to_schedule unless @pending_signals.empty?
         end
 
         def do_start
@@ -265,12 +314,14 @@ module ReactiveStreams
             begin
               # First we pump the user-provided function for the next element
               next_element = @get_next.call
-            rescue StopIteration
+
+            rescue StopIteration, EOFError
               # If we are at End-of-Stream, we need to consider this
               # `Subscription` as cancelled as per rule 1.6. Then we signal
               # `on_complete` as per rule 1.2 and 1.5.
               do_cancel
               @subscriber.on_complete
+
             rescue StandardError => error
               # If `get_next` raises (it can, since it is user-provided), we
               # need to treat it as publisher error as per rule 1.4
@@ -291,16 +342,10 @@ module ReactiveStreams
           signal(:send) if !@cancelled && @demand > 0
 
         rescue StandardError => error
-          # We can only get here if `on_next` or `on_complete` raised, and they
-          # are not allowed to according to rule 2.13, so we can only cancel and
-          # log here.
-          do_cancel
-
-          msg = "Subscriber violated the Reactive Streams rule 2.13 by "\
-                "raising an exception from on_next or on_complete. "\
-                "Subscriber: #{@subscriber.inspect}."
-          @logger.error(ReactiveStreamsError.new(msg))
-          @logger.error(error)
+          # We can only get here if '#on_next' or '#on_complete' raised, and
+          # they are not allowed to according to rule 2.13, so we can only
+          # cancel and log here.
+          subscriber_raised(error: error, in_method: [:on_next, :on_complete])
         end
 
         # Handles cancellation requests, and is idempotent, thread-safe and not
@@ -318,25 +363,42 @@ module ReactiveStreams
           @subscriber.on_error(error)
 
         rescue StandardError => error2
-          # If `on_error` throws an exception, this is a spec violation
-          # according to rule 1.9 and 2.13, and all we can do is to log it.
-          msg = "Subscriber#on_error violated the Reactive Streams rule 2.13 "\
-                "by raising an exception. Subscriber: #{@subscriber.inspect}."
+          # If '#on_error' throws an exception, this is a spec violation
+          # according to rules 1.9 and 2.13, so we can only log here.
+          subscriber_raised(error: error2, in_method: :on_error)
+
+          # Also log the original error, as there is no other way to record it
+          @logger.error(error)
+        end
+
+        # Handle subscriber raising exceptions which violate Reactive Streams
+        # rule 2.13. All we can do is cancel and log them.
+        def subscriber_raised(error:, in_method:)
+          do_cancel
+
+          method_names = [*in_method].map { |sym| "'##{sym}'" }.join(" or ")
+
+          msg = "Subscriber violated the Reactive Streams rule 2.13 by "\
+                "raising an exception in #{method_names}. "\
+                "Subscriber: #{@subscriber.inspect}."
+
           @logger.error(ReactiveStreamsError.new(msg))
-          @logger.error(error2)
+          @logger.error(error)
         end
       end
     end
 
-    class SomethingSubscriber < ReactiveStreams::API::Subscriber
+    class QueuingSubscriber < ReactiveStreams::API::Subscriber
       def initialize
-
+        @pending_signals = Queue.new
       end
     end
 
     class IOPublisher < ReactiveStreams::Tools::PumpingPublisher
       def initialize(input_io:, **args)
-        super(get_next: input_io.each_line.method(:next), **args)
+        # Fails due to Fiber across Threads:
+        # super(get_next: input_io.each_line.method(:next), **args)
+        super(get_next: input_io.method(:readline), **args)
       end
     end
 
@@ -411,7 +473,7 @@ SKETCH_OF_KV_PROTOCOL
 #   end
 # end
 
-class ChildProcessPublisher < ReactiveStreams::Tools::IOPublisher
+class ChildProcessPublisher < ReactiveStreams::Tools::PumpingPublisher
   def initialize(process:, **args)
     @process = process
 
@@ -419,7 +481,7 @@ class ChildProcessPublisher < ReactiveStreams::Tools::IOPublisher
     setup_finalizer
     setup_pipe
 
-    super(input_io: @input_io, **args)
+    super(get_next: self.method(:readline_and_raise_if_dead), **args)
   end
 
   def subscribe(subscriber)
@@ -446,6 +508,18 @@ class ChildProcessPublisher < ReactiveStreams::Tools::IOPublisher
   def start_process
     @process.start
     @process.io.stdout.close
+  end
+
+  def readline_and_raise_if_dead
+    @input_io.readline
+  rescue EOFError
+    if @process.crashed?
+      msg = "Process died with exit code: #{@process.exit_code}. "\
+            "Process: #{@process.inspect}"
+      raise msg
+    else
+      raise
+    end
   end
 
   # @see ObjectSpace#define_finalizer
@@ -546,9 +620,17 @@ end
 
 ## Demo basic "pumping" reactive streams publisher into logging subscriber
 def demo_pump_basic
+  # Fails due to Fiber across Threads:
+  #g = (0...1000).to_enum.method(:next)
   n = 0
   g = -> { n += 1; raise StopIteration if n > 1000; n }
   demo_of(publisher: ReactiveStreams::Tools::PumpingPublisher.new(get_next: g))
+end
+
+def demo_pump_fiber
+  g = (0...10000).to_enum.method(:next)
+  s = ->(&block) { Fiber.new(&block).resume }
+  demo_of(publisher: ReactiveStreams::Tools::PumpingPublisher.new(get_next: g, schedule: s))
 end
 
 ## Demo IO-reading reactive streams publisher into logging subscriber
@@ -568,4 +650,10 @@ end
 # To interact:
 #
 #   bundle exec irb -r ./gutenberg_bigrams.rb
+#
+
+#
+# To non-interactively run a demo:
+#
+#   bundle exec ruby -r ./gutenberg_bigrams.rb -e 'demo_pump_process; gets'
 #
