@@ -5,6 +5,7 @@ gemspec
 
 group :development do
   gem "byebug"
+  # gem "concurrent-ruby"
   gem "rake", "~> 12.0"
   gem "rspec", "~> 3.6"
   gem "rubocop", "~> 0.49.1", require: false

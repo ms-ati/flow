@@ -5,9 +5,8 @@
 ##
 # 1. Spikes of reactive streams level
 ##
-
 require "childprocess"
-require "values"
+require "flow/base/atomic_boolean"
 
 module ReactiveStreams
   module API
@@ -121,39 +120,154 @@ module ReactiveStreams
       end
     end
 
-    # Default implementation used if concurrent-ruby not available
-    class MutexAtomicBoolean
-      def initialize(initial = false)
-        @value = initial
-        @mutex = ::Thread::Mutex.new
-      end
-
-      def value
-        @mutex.synchronize { @value }
-      end
-
-      def value=(update)
-        @mutex.synchronize { @value = update }
-      end
-
-      def compare_and_set(expect, update)
-        @mutex.synchronize do
-          matched = (expect == @value)
-          @value = update if matched
-          matched
-        end
-      end
-
-      def make_true
-        compare_and_set(false, true)
-      end
-
-      def make_false
-        compare_and_set(true, false)
+    class Runner
+      def call(&block)
+        raise NotImplementedError
       end
     end
 
-    AtomicBoolean = MutexAtomicBoolean
+    RUN_IN_NEW_THREAD = Thread.method(:new)
+    RUN_IN_NEW_FIBER = ->(&block) { Fiber.new(&block).resume }
+    DEFAULT_RUNNER = RUN_IN_NEW_THREAD
+
+    class Signaller
+      DEFAULT_CALLBACK_PREFIX = "do_"
+
+      # @param target  [Object]
+      #   Target object to receive asynchronous signal handler callbacks as the
+      #   pending signals queue is processed. Generally also the submitter of
+      #   pending signals.
+      #
+      # @param signals [Array<Symbol, Hash{Symbol => Proc}>]
+      #   Names of signals to handle, assuming a convention that the target's
+      #   signal handler functions are the prefix "do_" followed by the signal
+      #   name. For exceptions to this rule, just provide a Hash mapping signal
+      #   names to their callbacks.
+      #
+      # @param batch_size [Integer]
+      #   How many signals the main loop will dispatch in one batch, before
+      #   rescheduling itself to avoid monopolizing a cpu.
+      #
+      # @param runner [Runner]
+      #   How we'll run the signaller's main loop, usually asynchronously.
+      #
+      def initialize(
+        target:,
+        signals:,
+        callback_prefix: DEFAULT_CALLBACK_PREFIX,
+        runner:          DEFAULT_RUNNER,
+        batch_size:      DEFAULT_BATCH_SIZE,
+        on_error:        DEFAULT_LOGGER.method(:error),
+        logger:          DEFAULT_LOGGER
+      )
+        # Error reporting - try to report to 'on_error', fallback to logger
+        @on_error = on_error
+        @logger = logger
+
+        # Signals and their mapping to callbacks (usually methods on the target)
+        @target = target
+        @callback_prefix = callback_prefix
+        @callbacks_by_signal = setup_callbacks(signals)
+
+        # Configure how we'll run the signaller's main loop
+        @runner = runner
+        @batch_size = batch_size
+
+        # Only one signaler main loop can run at a time
+        @pending_signals = Queue.new
+        @is_running = AtomicBoolean.new
+        @main_loop = self.method(:main_loop).to_proc
+      end
+
+      def signal(name, *args)
+        @pending_signals << (args.empty? ? name : [name, args])
+        try_to_run_main_loop
+      end
+
+      private
+
+      # An instance of an anonymous class compares equal only to itself
+      NO_PENDING_SIGNALS = Class.new.new.freeze
+
+      # @return [Symbol, NO_PENDING_SIGNALS]
+      def next_pending_signal
+        @pending_signals.pop(true)
+      rescue ThreadError
+        # Queue#pop(true) raises ThreadError when the queue is empty
+        NO_PENDING_SIGNALS
+      end
+
+      def main_loop
+        left_in_loop = @signals_per_loop
+        # Establishes a happens-before relationship with end of previous run
+        return unless @running.value
+
+        next_signal, args = next_pending_signal
+        do_signal_callback(next_signal, args)
+
+      rescue StandardError => error
+        terminate_due_to(error)
+
+      ensure
+        # Establishes a happens-before relationship with beginning of next run
+        @running.value = false
+
+        # If we still have signals to process, schedule ourselves to run again
+        try_to_run_main_loop unless @pending_signals.empty?
+      end
+
+      def do_signal_callback(next_signal, args)
+        unless @cancelled || next_signal == NO_PENDING_SIGNALS
+          signal_callback = @callbacks_by_signal[next_signal]
+
+          if !signal_callback.nil?
+            signal_callback.call(*args)
+          else
+            msg = "#{@target.class.name} received an unrecognized signal: "\
+                  "#{next_signal.inspect}"
+            raise ReactiveStreamsError.new(msg)
+          end
+        end
+      end
+
+      def try_to_run_main_loop
+        # Only schedule to run if not already running
+        if @is_running.make_true
+          @runner.call(&@main_loop)
+        end
+      rescue StandardError => error
+        # If we can't schedule to run, we need to fail gracefully
+        terminate_due_to(error)
+      end
+
+      # @param signals [Array<Symbol, Hash{Symbol => Proc}>]
+      # @return [Hash{Symbol => Proc}]
+      def setup_callbacks(signals)
+        signals.inject({}) do |hsh, sym_or_hsh|
+          hsh.merge(callback_mapping_for(sym_or_hsh))
+        end
+      end
+
+      # @param sym_or_hsh [Symbol, Hash{Symbol => Proc}]
+      # @return [Hash{Symbol => Proc}]
+      def callback_mapping_for(sym_or_hsh)
+        if sym_or_hsh.is_a? Symbol
+          callback = @target.method("#{@callback_prefix}#{sym_or_hsh}".to_sym)
+          { sym_or_hsh => callback }
+        else
+          sym_or_hsh
+        end
+      end
+    end
+
+    class IOWaiter
+      def call(io, for_read: true, for_write: false, &callback)
+        raise NotImplementedError
+      end
+    end
+
+    class IOSelector < IOWaiter
+    end
 
     DEFAULT_SCHEDULE = Thread.method(:new)
 
@@ -231,7 +345,7 @@ module ReactiveStreams
           @demand = 0
 
           @pending_signals = Queue.new
-          @running = AtomicBoolean.new
+          @running = Flow::Base::AtomicBoolean.new
           @as_proc = self.method(:run).to_proc
         end
 
@@ -670,5 +784,5 @@ end
 #
 # To non-interactively run a demo:
 #
-#   bundle exec ruby -r ./gutenberg_bigrams.rb -e 'demo_pump_process; gets'
+#   bundle exec ruby -e 'require "./gutenberg_bigrams.rb"; demo_pump_process; gets'
 #

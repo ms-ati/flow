@@ -7,16 +7,23 @@ AllCops:
     - "vendor/**/*"
   TargetRubyVersion: 2.3
 
-##
-# TODO: Uncomment once the inherited version of this is emptied
-##
-#Style/FrozenStringLiteralComment:
-#  Exclude:
-#    - "Gemfile"
-#    - "Rakefile"
-#    - "flow.gemspec"
-#    - "flow-core/flow-core.gemspec"
-#    - "flow-core/spec/**/*"
+Layout/DotPosition:
+  EnforcedStyle: trailing
+
+Metrics/BlockLength:
+  ExcludedMethods: ["describe", "context"]
+
+Style/Documentation:
+  Exclude:
+    - "*/spec/**/*"
+
+Style/FrozenStringLiteralComment:
+  Exclude:
+    - "Gemfile"
+    - "Rakefile"
+    - "flow.gemspec"
+    - "**/*.gemspec"
+    - "*/spec/**/*"
 
 Style/StringLiterals:
   EnforcedStyle: double_quotes
