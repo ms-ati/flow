@@ -10,17 +10,17 @@ module Flow
     #
     class Signaller
       #
-      # @param signals [Array<Symbol, Hash{Symbol => Proc}>]
-      #   Names of signals to handle, assuming a convention that the target's
-      #   signal handler functions are the prefix "do_" followed by the signal
-      #   name. For exceptions to this rule, just provide a Hash mapping signal
-      #   names to their callbacks.
-      #
       # @param target [Object]
       #   Target object to receive asynchronous signal handler callbacks as the
       #   pending signals queue is processed. Generally also the submitter of
       #   pending signals. Required if *any* signals are provided by name,
       #   rather than as a map from symbol to proc callback.
+      #
+      # @param signals [Array<Symbol, Hash{Symbol => Proc}>]
+      #   Names of signals to handle, assuming a convention that the target's
+      #   signal handler functions are the prefix "do_" followed by the signal
+      #   name. For exceptions to this rule, just provide a Hash mapping signal
+      #   names to their callbacks.
       #
       # @param num_per_run [Integer]
       #   How many signals the main loop will process in one run before
@@ -30,9 +30,9 @@ module Flow
       #   How we'll run the signaller's main loop (usually asynchronously).
       #
       def initialize(
-        signals:,
         target:,
-        runner:      RUN_IN_NEW_THREAD,
+        signals:,
+        runner:      Thread.method(:new),
         num_per_run: 2,
         on_error:    Logger.new($stderr).method(:error)
       )
@@ -73,6 +73,11 @@ module Flow
       # Usually called from inside a signal callback method on the `target`,
       # since usually the target wants to complete its own clean-up in
       # addition to stopping the signal-processing loop.
+      #
+      # After cancelling:
+      #   1. Calls to {#signal} will raise an exception
+      #   2. No callbacks will be made for pending signals, but the queue will
+      #      be drained
       #
       def cancel
         @is_cancelled.value = true

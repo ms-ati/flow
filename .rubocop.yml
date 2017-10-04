@@ -30,3 +30,6 @@ Style/FrozenStringLiteralComment:
 
 Style/StringLiterals:
   EnforcedStyle: double_quotes
+
+Style/SymbolArray:
+  MinSize: 3
