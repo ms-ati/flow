@@ -13,6 +13,7 @@ namespace :spec do
   PROJECT_DIRS.each do |dir|
     desc "Run the RSpec code examples in #{dir}"
     RSpec::Core::RakeTask.new(dir) do |t|
+      t.rspec_opts = "--default-path #{dir}/spec --require spec_helper"
       t.ruby_opts = "-I#{dir}/lib"
       t.pattern = "#{dir}/#{RSpec::Core::RakeTask::DEFAULT_PATTERN}"
     end

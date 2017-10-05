@@ -125,7 +125,7 @@ module Flow
       end
 
       def call_signal_callback(next_signal, args)
-        return if @is_cancelled || NO_PENDING_SIGNALS == next_signal
+        return if @is_cancelled.value || NO_PENDING_SIGNALS == next_signal
 
         signal_callback = @callbacks_by_signal[next_signal] || begin
           msg = "#{self.class.name} received an unrecognized signal: "\
