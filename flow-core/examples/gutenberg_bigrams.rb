@@ -10,77 +10,6 @@ require "flow/reactive_streams"
 
 module ReactiveStreams
   module Tools
-    class NilSubscriberClass < ReactiveStreams::Subscriber
-      private_class_method :new
-      def on_subscribe(_); end
-      def on_next(_); end
-      def on_error(_); end
-      def on_complete; end
-    end
-
-    NIL_SUBSCRIBER = NilSubscriberClass.send(:new)
-
-    class NilSubscriptionClass < ReactiveStreams::Subscription
-      private_class_method :new
-      def request(_); end
-      def cancel(_); end
-    end
-
-    NIL_SUBSCRIPTION = NilSubscriptionClass.send(:new)
-
-    class LoggingSubscriber < ReactiveStreams::Subscriber
-      def initialize(
-        logger: DEFAULT_LOGGER,
-        log_on_next: true,
-        first_request_size: 2,
-        later_requests_size: 1024
-      )
-        @logger = logger
-        @log_on_next = log_on_next
-        @first_request_size = first_request_size
-        @later_requests_size = later_requests_size
-      end
-
-      def on_subscribe(subscription)
-        @logger.info("#{self.class} - #on_subscribe(#{subscription})")
-        @subscription = subscription
-        @subscription.request(@first_request_size)
-        @started = Time.now
-      end
-
-      def on_next(element)
-        if @log_on_next
-          @logger.info("#{self.class} - #on_next(#{element.inspect})")
-        end
-        @subscription.request(@later_requests_size)
-      end
-
-      def on_error(error)
-        @logger.info("#{self.class} - #on_error(#{error.inspect})")
-        @logger.error(error)
-        log_time_taken
-      end
-
-      def on_complete
-        @logger.info("#{self.class} - #on_complete")
-        log_time_taken
-      end
-
-      private
-
-      def log_time_taken
-        @ended = Time.now
-        duration = Time.at(@ended - @started).utc.strftime("%H:%M:%S.%L")
-        @logger.info("#{self.class} - Total duration #{duration}")
-      end
-    end
-
-    DEFAULT_LOGGER = begin
-      l = Logger.new($stderr)
-      l.level = Logger::INFO
-      l
-    end
-
     class Runner
       def call(&block)
         raise NotImplementedError
@@ -110,7 +39,7 @@ module ReactiveStreams
         only_one:   true,
         schedule:   DEFAULT_SCHEDULE,
         batch_size: DEFAULT_BATCH_SIZE,
-        logger:     DEFAULT_LOGGER
+        logger:     Flow::DEFAULT_LOGGER
       )
         @get_next = get_next
         @only_one = only_one
@@ -494,7 +423,7 @@ Thread.abort_on_exception = true
 
 def demo_of(
   publisher:,
-  subscriber: ReactiveStreams::Tools::LoggingSubscriber.new(log_on_next: false)
+  subscriber: Flow::ReactiveStreams::LoggingSubscriber.new(log_on_next: false)
 )
   publisher.subscribe(subscriber)
   @prevent_gc_of = [publisher, subscriber]
