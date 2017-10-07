@@ -10,6 +10,12 @@ AllCops:
 Layout/DotPosition:
   EnforcedStyle: trailing
 
+Lint/UnusedMethodArgument:
+  Exclude:
+    - "flow-reactive_streams/lib/reactive_streams/publisher.rb"
+    - "flow-reactive_streams/lib/reactive_streams/subscriber.rb"
+    - "flow-reactive_streams/lib/reactive_streams/subscription.rb"
+
 Metrics/BlockLength:
   ExcludedMethods: ["describe", "context"]
 
@@ -27,6 +33,9 @@ Style/FrozenStringLiteralComment:
     - "flow.gemspec"
     - "**/*.gemspec"
     - "*/spec/**/*"
+    - "flow-reactive_streams/lib/reactive_streams/publisher.rb"
+    - "flow-reactive_streams/lib/reactive_streams/subscriber.rb"
+    - "flow-reactive_streams/lib/reactive_streams/subscription.rb"
 
 Style/StringLiterals:
   EnforcedStyle: double_quotes

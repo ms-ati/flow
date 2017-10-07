@@ -83,6 +83,10 @@ module Flow
         @is_cancelled.value = true
       end
 
+      def cancelled?
+        @is_cancelled.value
+      end
+
       private
 
       # By default, signal names are prefixed to find callback methods on target

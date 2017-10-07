@@ -1,7 +1,7 @@
 require "rspec/core/rake_task"
 require "rubocop/rake_task"
 
-SUB_PROJECTS = %i[base core].freeze
+SUB_PROJECTS = %i[base reactive_streams core].freeze
 PROJECT_DIRS = SUB_PROJECTS.map { |p| "flow-#{p}".to_sym }
 
 task default: %i[spec rubocop]

@@ -6,50 +6,11 @@
 # 1. Spikes of reactive streams level
 ##
 require "childprocess"
-require "flow/base"
+require "flow/reactive_streams"
 
 module ReactiveStreams
-  module API
-    class Publisher
-      def subscribe(subscriber)
-        raise NotImplementedError
-      end
-    end
-
-    class Subscriber
-      def on_subscribe(subscription)
-        raise NotImplementedError
-      end
-
-      def on_next(element)
-        raise NotImplementedError
-      end
-
-      def on_error(error)
-        raise NotImplementedError
-      end
-
-      def on_complete
-        raise NotImplementedError
-      end
-    end
-
-    class Subscription
-      # @see Reactive Streams rule 3.17
-      MAX_DEMAND = (2**63) - 1
-
-      def request(n)
-        raise NotImplementedError
-      end
-
-      def cancel
-        raise NotImplementedError
-      end
-    end
-  end
-
   module Tools
-    class NilSubscriberClass < ReactiveStreams::API::Subscriber
+    class NilSubscriberClass < ReactiveStreams::Subscriber
       private_class_method :new
       def on_subscribe(_); end
       def on_next(_); end
@@ -59,7 +20,7 @@ module ReactiveStreams
 
     NIL_SUBSCRIBER = NilSubscriberClass.send(:new)
 
-    class NilSubscriptionClass < ReactiveStreams::API::Subscription
+    class NilSubscriptionClass < ReactiveStreams::Subscription
       private_class_method :new
       def request(_); end
       def cancel(_); end
@@ -67,7 +28,7 @@ module ReactiveStreams
 
     NIL_SUBSCRIPTION = NilSubscriptionClass.send(:new)
 
-    class LoggingSubscriber < ReactiveStreams::API::Subscriber
+    class LoggingSubscriber < ReactiveStreams::Subscriber
       def initialize(
         logger: DEFAULT_LOGGER,
         log_on_next: true,
@@ -143,7 +104,7 @@ module ReactiveStreams
 
     DEFAULT_BATCH_SIZE = 1024
 
-    class PumpingPublisher < ReactiveStreams::API::Publisher
+    class PumpingPublisher < ReactiveStreams::Publisher
       def initialize(
         get_next:,
         only_one:   true,
@@ -200,7 +161,7 @@ module ReactiveStreams
         that
       end
 
-      class PumpingSubscription < ReactiveStreams::API::Subscription
+      class PumpingSubscription < ReactiveStreams::Subscription
         attr_reader :subscriber
 
         # @param logger [Logger]
@@ -211,90 +172,35 @@ module ReactiveStreams
           @logger = logger
 
           @signaller = Flow::Base::Signaller.new(
-            signals:  [:start, :request, :cancel],
+            signals:  [:start, :request],
             target:   self,
             runner:   schedule,
             on_error: subscriber.method(:on_error),
           )
 
           @demand = 0
-
-          @pending_signals = Queue.new
-          @running = Flow::Base::AtomicBoolean.new
-          @as_proc = self.method(:run).to_proc
         end
 
         def start
-          signal(:start)
+          @signaller.signal(:start)
         end
 
         def request(n)
-          signal(:request, n)
+          @signaller.signal(:request, n)
         end
 
         def cancel
-          signal(:cancel)
+          @signaller.cancel
+        end
+
+        def cancelled?
+          @signaller.cancelled?
         end
 
         private
 
-        def signal(s, n = nil)
-          @pending_signals << (n.nil? ? s : [s, n])
-          try_to_schedule
-        end
-
-        # Makes sure that this Subscription is only running once at a time.
-        # This is important to make sure that we follow rule 1.3
-        def try_to_schedule
-          @schedule.call(&@as_proc) if @running.make_true
-        rescue StandardError => error
-          # If we can't schedule to run, we need to fail gracefully
-          terminate_due_to(error)
-        end
-
-        def run
-          # Establishes a happens-before relationship with end of previous run
-          return unless @running.value
-
-          # Pop next signal from queue
-          next_signal, n =
-            begin
-              @pending_signals.pop(true)
-            rescue ThreadError
-              # Queue#pop(true) raises ThreadError when the queue is empty
-              return
-            end
-
-          # If cancelled, skip handling the signals, but keep emptying the queue
-          unless @cancelled
-            case next_signal
-            when :start
-              do_start
-            when :request
-              do_request(n)
-            when :send
-              do_send
-            when :cancel
-              do_cancel
-            else
-              msg = "PumpingSubscription#run received an unrecognized signal: "\
-                    "#{next_signal.inspect}"
-              terminate_due_to(ReactiveStreamsError.new(msg))
-            end
-          end
-
-        ensure
-          # Establishes a happens-before relationship with beginning of next run
-          @running.value = false
-
-          # If we still have signals to process, schedule ourselves to run again
-          try_to_schedule unless @pending_signals.empty?
-        end
-
         def do_start
           @subscriber.on_subscribe(self)
-        rescue StandardError => error
-          terminate_due_to(error)
         end
 
         def do_request(n)
@@ -302,7 +208,7 @@ module ReactiveStreams
             msg = "Subscriber violated the Reactive Streams rule 3.9 by "\
                   "requesting a non-positive number of elements. Subscriber: "\
                   "#{subscriber.inspect}."
-            terminate_due_to(ReactiveStreamsError.new(msg))
+            raise ReactiveStreamsError, msg
           else
             @demand = [@demand + n, MAX_DEMAND].min
             do_send
@@ -323,27 +229,22 @@ module ReactiveStreams
               # If we are at End-of-Stream, we need to consider this
               # `Subscription` as cancelled as per rule 1.6. Then we signal
               # `on_complete` as per rule 1.2 and 1.5.
-              do_cancel
+              cancel
               @subscriber.on_complete
-
-            rescue StandardError => error
-              # If `get_next` raises (it can, since it is user-provided), we
-              # need to treat it as publisher error as per rule 1.4
-              terminate_due_to(error)
             end
 
             # Then we signal the next element downstream to the `Subscriber`
-            @subscriber.on_next(next_element) unless @cancelled
+            @subscriber.on_next(next_element) unless cancelled?
 
             # Keep going until exhausted batch or demand, or cancelled
             left_in_batch -= 1
             @demand -= 1
-            break if @cancelled || left_in_batch.zero? || @demand.zero?
+            break if cancelled? || left_in_batch.zero? || @demand.zero?
           end
 
           # If the `Subscription` is still alive and well, and we have demand to
           # satisfy, we signal ourselves to be scheduled to send more data.
-          signal(:send) if !@cancelled && @demand > 0
+          signal(:send) if !cancelled? && @demand > 0
 
         rescue StandardError => error
           # We can only get here if '#on_next' or '#on_complete' raised, and
@@ -352,33 +253,10 @@ module ReactiveStreams
           subscriber_raised(error: error, in_method: [:on_next, :on_complete])
         end
 
-        # Handles cancellation requests, and is idempotent, thread-safe and not
-        # synchronously performing heavy computations as specified in rule 3.5
-        def do_cancel
-          @cancelled = true
-        end
-
-        def terminate_due_to(error)
-          # When we signal on_error, the subscription must be considered as
-          # cancelled, as per rule 1.6
-          do_cancel
-
-          # Then we signal the error downstream, to the `Subscriber`
-          @subscriber.on_error(error)
-
-        rescue StandardError => error2
-          # If '#on_error' throws an exception, this is a spec violation
-          # according to rules 1.9 and 2.13, so we can only log here.
-          subscriber_raised(error: error2, in_method: :on_error)
-
-          # Also log the original error, as there is no other way to record it
-          @logger.error(error)
-        end
-
         # Handle subscriber raising exceptions which violate Reactive Streams
         # rule 2.13. All we can do is cancel and log them.
         def subscriber_raised(error:, in_method:)
-          do_cancel
+          cancel
 
           method_names = [*in_method].map { |sym| "'##{sym}'" }.join(" or ")
 
@@ -392,7 +270,7 @@ module ReactiveStreams
       end
     end
 
-    class QueuingSubscriber < ReactiveStreams::API::Subscriber
+    class QueuingSubscriber < ReactiveStreams::Subscriber
       def initialize
         @pending_signals = Queue.new
       end

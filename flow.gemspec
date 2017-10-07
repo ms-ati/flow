@@ -19,6 +19,7 @@ Gem::Specification.new do |s|
   s.required_ruby_version = ">= 2.3.1"
 
   s.add_dependency "flow-base", version
+  s.add_dependency "flow-reactive_streams", version
   s.add_dependency "flow-core", version
   # s.add_dependency "flow-even", version
   # s.add_dependency "flow-over", version
